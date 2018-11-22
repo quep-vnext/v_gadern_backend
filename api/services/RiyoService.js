@@ -25,7 +25,7 @@ async function createRiyo(userRiyo) {
 }
 
 //#region only kanri -------------------------------------------------------------------------------------
-async function searchRiyo(objSearch) {
+async function searchRiyo(objSearch) {    
     let requiredFields = [
         'UserNo'
     ]

@@ -124,7 +124,7 @@ router.post('/api/getCustomerInfo', function(req, res){
 /**
 * search riyo
 */
-router.post('/api/searchRiyo', function(req, res){
+router.post('/api/searchRiyo', function(req, res){    
     return riyoController.searchRiyo(req, res);
 });
 
