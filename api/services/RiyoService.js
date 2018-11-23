@@ -1,33 +1,15 @@
 //check logic in services before call to model
 'use strict';
 const RiyoModel = require('../models/T_Riyo');
-const UserModel = require('../models/T_User');
 const ResCode = require('../util/validation').RESPONSE_CODE;
 const validation = require('../util/validation');
 
-async function asyncGetUserNobyLoginId(loginId) {
-    let userNo = await UserModel.asyncGetUserbyLoginId(loginId);
-    if(userNo) {
-        return userNo.UserNo;
-    }
-    return null;
-}
-
-async function createRiyo(userRiyo) {
-    let riyo = userRiyo;
-    riyo.UserNo = await asyncGetUserNobyLoginId(userRiyo.LoginId);
-    if(!riyo.UserNo) return false;
-    let result = await RiyoModel.asyncCreateRiyo(riyo);
-    if ( result.rowsAffected !== null) {
-        return true;
-    }
-    return false;
-}
 
 //#region only kanri -------------------------------------------------------------------------------------
 async function searchRiyo(objSearch) {    
     let requiredFields = [
-        'UserNo'
+        'UserName',
+        'Email'
     ]
     let checkRequired = validation.checkRequiredFields(objSearch, requiredFields);
     if (checkRequired.required) {
@@ -39,12 +21,12 @@ async function searchRiyo(objSearch) {
         return result;
     }
     let result = await RiyoModel.searchRiyo(objSearch);
-    if (result) {
+    console.log(result);
+    if (result !== "undefined") {
         return {
             code: ResCode.SUCCESS,
             message:'Get successed!',
-            data: result.data,
-            totalRecord: result.totalRecord
+            data: result
         }
     } else {
         return {
@@ -55,7 +37,6 @@ async function searchRiyo(objSearch) {
 }
 //#endregion
 
-module.exports = {
-    createRiyo,
+module.exports = {    
     searchRiyo
 }

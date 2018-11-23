@@ -8,6 +8,7 @@ var cors = require('cors');
 var xssFilters = require('xss-filters');
 
 const riyoController = require('../controllers/RiyoController');
+//const userController = require('../controllers/UserController');
 
 const commonUtil = require('../util/common');
 

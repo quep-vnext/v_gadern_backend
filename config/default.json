@@ -1,10 +1,10 @@
 {
     "TestENV" : {
         "dbConfig" :  {
-            "user": "sa",
-            "password": "Adminsql@123",
-            "server": "localhost",
-            "database": "HokenFolder"
+            "user": "root",
+            "password": "",
+            "host": "localhost",
+            "database": "v_gardem"
         },
         "passwordEncrypt" : {
             "passPhrase" : "HokenFolder2018",

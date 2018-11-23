@@ -7,9 +7,10 @@ const kanriRouter = require('./api/middleware/kanri_router');
 var app = express();
 
 async function startServer() {
-    let dbConnect = await db.dbConnect();
-    if(dbConnect) {
+    let dbConnect = await db.dbConnect();    
+    if(dbConnect) {        
         console.log('Connected to DB.....Server started!');
+        global.connection = dbConnect;
     }else {
         console.log('Connect to DB fail! Server stopped!');
         process.exit(1);

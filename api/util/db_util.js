@@ -1,15 +1,12 @@
 'use_strict';
 
 const systemConfig = require('config');
-const sql = require('mssql');
+const sql = require('mysql');
 let initialized = false;
 let sqlConnect = null;
+let connection = null;
 
-module.exports = {
-    sql,
-    sqlConnect,
-    dbConnect
-}
+
 
 async function dbConnect () {
     let sqlConfig = systemConfig.get("TestENV.dbConfig");
@@ -17,10 +14,20 @@ async function dbConnect () {
     sqlConfig.options = {
         "encrypt": false
     }
+    connection = sql.createConnection(sqlConfig);    
     try{
-        sqlConnect = await new sql.connect(sqlConfig);
+        sqlConnect = connection.connect();        
     } catch (err) {
         return false;
-    }
-    return sql;
+    }    
+    return connection;
+}
+
+
+
+module.exports = {
+    sql,
+    sqlConnect,
+    dbConnect,
+    connection
 }

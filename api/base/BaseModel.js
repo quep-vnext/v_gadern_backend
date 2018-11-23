@@ -3,8 +3,8 @@ const logService = require('../services/LogService');
 const validation = require('../util/validation');
 const common = require('../util/common');
 const DB = require('../util/db_util');
-const sql = DB.sql;
-
+const connection = DB.connection;
+/*
 const T_Riyo = {
     tableName: "T_Riyo",
     columns: [
@@ -15,6 +15,7 @@ const T_Riyo = {
         { key: "UpdateDate", type: sql.DateTime, isPk: false, defaultValue: "getdate()", defaultUpdate: "getdate()" }
     ]
 };
+*/
 const orderWhiteList = ["asc", "desc", null];
 const operatorWhiteList = ["AND", "OR"];
 const conditionWhiteList = [
@@ -1147,7 +1148,7 @@ async function buildOrder(objSearch, fieldWhiteList, defaultOrder) {
 
 module.exports = {
     DB,
-    sql,
+    connection,
     fillData,
     createNew,
     createNewGetId,

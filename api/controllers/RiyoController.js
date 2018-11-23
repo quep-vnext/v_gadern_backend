@@ -5,13 +5,8 @@ const logService = require('../services/LogService');
 async function searchRiyo(request, response) {
     let startTime = new Date();
     let objSearch = {
-        UserNo: request.body.user_no,
-        Login: request.body.login_action,
-        KazokuJouhou: request.body.kazoku_jouhou,
-        Irai: request.body.irai,
-        HokenShouken: request.body.hoken_shouken,
-        HokenDairiten: request.body.hoken_dairiten,
-        Baner: request.body.baner,
+        UserName: request.body.user_name,
+        Email: request.body.email,        
         FromDate: request.body.from_date,
         ToDate: request.body.to_date,
         Sort: (typeof request.body.sort === "undefined" || request.body.sort === null ? [] : request.body.sort),
@@ -28,8 +23,7 @@ async function searchRiyo(request, response) {
         { key: "Function", content: "searchRiyo" },
         { key: "Param", content: JSON.stringify(objSearch) }
     ]
-    await logService.accessLog(logData);
-
+    await logService.accessLog(logData);    
     return response.json(data);
 }
 
