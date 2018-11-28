@@ -9,13 +9,15 @@ var xssFilters = require('xss-filters');
 
 const riyoController = require('../controllers/RiyoController');
 //const userController = require('../controllers/UserController');
+const ProductController = require('../controllers/ProductController');
 
 const commonUtil = require('../util/common');
 
 //defined by below NotAuthen array
 const NotAuthen = [
     '/kanri/api/login',
-    '/kanri/api/searchRiyo'
+    '/kanri/api/searchRiyo',
+    '/kanri/api/getListProduct'
 ];
 
 var router = express.Router();
@@ -129,7 +131,15 @@ router.post('/api/searchRiyo', function(req, res){
     return riyoController.searchRiyo(req, res);
 });
 
+/**
+* get list of products
+*/
+router.get('/api/getListProduct', function(req, res){    
+    return ProductController.getListProduct(req, res);
+});
+
 //#endregion
+
 
 
 /**

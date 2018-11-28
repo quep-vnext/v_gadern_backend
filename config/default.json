@@ -2,7 +2,7 @@
     "TestENV" : {
         "dbConfig" :  {
             "user": "root",
-            "password": "",
+            "password": "Adminsql@123",
             "host": "localhost",
             "database": "v_gardem"
         },
