@@ -17,7 +17,8 @@ const commonUtil = require('../util/common');
 const NotAuthen = [
     '/kanri/api/login',
     '/kanri/api/searchRiyo',
-    '/kanri/api/getListProduct'
+    '/kanri/api/getListProduct',
+    '/kanri/api/searchProducts'
 ];
 
 var router = express.Router();
@@ -136,6 +137,13 @@ router.post('/api/searchRiyo', function(req, res){
 */
 router.get('/api/getListProduct', function(req, res){    
     return ProductController.getListProduct(req, res);
+});
+
+/**
+* search list of products
+*/
+router.post('/api/searchProducts', function(req, res){    
+    return ProductController.searchProducts(req, res);
 });
 
 //#endregion
