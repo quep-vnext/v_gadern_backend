@@ -56,10 +56,10 @@ async function searchProducts(objSearch) {
     var para_array=[objSearch.IdTypeMain, objSearch.IdTypeChild]
     let sqlStr = `SELECT T1.name AS child_name,
                         T2.name AS parent_name,
-                        T3.id AS product_id, T3.name AS product_name, T3.favorite,
-                        T3.url_image_1,T3.url_image_2,T3.url_image_3,
+                        T3.id AS product_id, T3.name AS product_name, T3.favorite,                        
                         T3.discount AS sale_percent, T3.created_date, T3.updated_date,
-                        T3.price_M, T3.price_L
+                        T3.price_M, T3.price_L,
+                        (SELECT json_arrayagg(T4.url_image) FROM image T4 WHERE T4.product_id=T3.id) AS url_image
                     FROM category T1
                     JOIN category T2
                     ON T1.parent_id=T2.id
@@ -86,9 +86,11 @@ async function searchProducts(objSearch) {
         });
     });
     await query.then(async function(res) {
-        dataReturn = res;
-        let obj = JSON.parse(dataReturn[0].price);
-        dataReturn[0].price = obj;
+        dataReturn = res;        
+        for (var i=0;i< dataReturn.length;i++) {            
+            let obj = JSON.parse(dataReturn[i].url_image);
+            dataReturn[i].url_image = obj;            
+        }
         let logData = [
             { key: "Time", content: new Date() },
             { key: "File", content: "T_Product.js" },
