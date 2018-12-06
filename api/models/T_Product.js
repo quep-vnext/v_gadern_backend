@@ -1,121 +1,140 @@
 'use strict';
 const baseModel = require('../base/BaseModel');
+const sql = baseModel.sql;
+
 const validation = require('../util/validation');
+
 const logService = require('../services/LogService');
 
-async function getListProduct(objSearch) {                
-    let dataReturn;    
-    let sqlStr = `SELECT T1.id AS id_type_child,T1.name AS child_name,
-                    T2.id AS id_type_main,T2.name AS parent_name,
-                    T3.id AS product_id, T3.name AS product_name, T3.category_id AS product_category_id,
-                    T3.discount AS sale_percent, T3.created_date, T3.updated_date
-                    FROM category T1
-                    JOIN category T2
-                    ON T1.parent_id=T2.id
-                    JOIN product T3
-                    ON T3.category_id=T1.id
-                    WHERE T2.parent_id=0`;
-    
-    let query = new Promise(function (resolve, reject) {
-        connection.query(sqlStr, async function(err, result, fields) {
-            if(result) {
-                resolve(result);
-            } else {
-                reject(err);
-            }
-        });
-    });
-    await query.then(async function(res) {
-        dataReturn = res;
-        let logData = [
-            { key: "Time", content: new Date() },
-            { key: "File", content: "T_Product.js" },
-            { key: "Function", content: "getListProduct" },
-            { key: "Sql", content: sqlStr },
-            { key: "Param", content: null }
-        ]
-        await logService.sqlLog(logData);            
-    }).catch(async function(err) {
-        let logData = [
-            { key: "Time", content: new Date() },
-            { key: "File", content: "T_Product.js" },
-            { key: "Function", content: "getListProduct" },
-            { key: "Table", content: "Product" },
-            { key: "Param", content: null },
-            { key: "Err", content: err }
-        ]
-        await logService.errorLog(logData);
-        
-        return false;
-    });
-    return(dataReturn);
-}
+const T_Table = {
+    tableName: "product",
+    columns: [
+        { key: "id", type: sql.Int, isPk: true, defaultValue: null },
+        { key: "name", type: sql.VarChar, isPk: false, defaultValue: null },
+        { key: "category_id", type: sql.Int, isPk: false, defaultValue: null },
+        { key: "discount", type: sql.Int, isPk: false, defaultValue: null },
+        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()", defaultUpdate: "getdate()" },
+        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()" },
+        { key: "favorite", type: sql.TinyInt, isPk: false, defaultValue: null },
+        { key: "price_M", type: sql.Int, isPk: false, defaultValue: null },
+        { key: "price_L", type: sql.Int, isPk: false, defaultValue: null }
+    ]
+};
+const fieldWhiteList = [
+    "name",
+    "category_id",
+    "discount",
+    "updated_date",
+    "created_date",
+    "favorite",
+    "price_M",
+    "price_L"
+];
 
-async function searchProducts(objSearch) {                
-    let dataReturn;    
-    var para_array=[objSearch.IdTypeMain, objSearch.IdTypeChild]
-    let sqlStr = `SELECT T1.name AS child_name,
-                        T2.name AS parent_name,
-                        T3.id AS product_id, T3.name AS product_name, T3.favorite,                        
-                        T3.discount AS sale_percent, T3.created_date, T3.updated_date,
-                        T3.price_M, T3.price_L,
-                        (SELECT json_arrayagg(T4.url_image) FROM image T4 WHERE T4.product_id=T3.id) AS url_image
-                    FROM category T1
-                    JOIN category T2
-                    ON T1.parent_id=T2.id
-                    JOIN product T3
-                    ON T3.category_id=T1.id
-                    WHERE T2.id=? AND T1.id=? `;
-    
-    if (!validation.isEmptyObject(objSearch.ToDate)) {
-        sqlStr += ` AND T3.updated_date <= ?`;
-        para_array.push(objSearch.ToDate)
-    }
-    if (!validation.isEmptyObject(objSearch.FromDate)) {
-        sqlStr += ` AND T3.updated_date >= ?`;
-        para_array.push(objSearch.FromDate);
-    }
+async function getProducts(objSearch) {
+    let param = baseModel.fillData(T_Table, objSearch);
+    let pageSize = parseInt(objSearch.PageSize);
+    let currentPage = (parseInt(objSearch.Page) - 1) * pageSize;
 
-    let query = new Promise(function (resolve, reject) {
-        connection.query(sqlStr, para_array, async function(err, result, fields) {
-            if(result) {
-                resolve(result);
-            } else {
-                reject(err);
-            }
-        });
-    });
-    await query.then(async function(res) {
-        dataReturn = res;        
-        for (var i=0;i< dataReturn.length;i++) {            
-            let obj = JSON.parse(dataReturn[i].url_image);
-            dataReturn[i].url_image = obj;            
+    let dataReturn;
+    let totalRecord = 0;
+    try {
+        let sqlStr = `SELECT SQL_CALC_FOUND_ROWS
+         T1.id
+        ,T1.name
+        ,T1.category_id
+        ,T1.discount
+        ,T1.updated_date
+        ,T1.created_date
+        ,T1.favorite
+        ,T1.price_M
+        ,T1.price_L
+         FROM product T1
+         WHERE 1 = 1`;
+
+        if (!validation.isEmptyObject(objSearch.name)) {
+            sqlStr += ` AND UPPER(T1.name) LIKE CONCAT('%', UPPER(@name), '%')`;
         }
+        if (!validation.isEmptyObject(objSearch.category_id)) {
+            sqlStr += ` AND T1.category_id = @category_id`;
+        }
+        if (!validation.isEmptyObject(objSearch.discount)) {
+            sqlStr += ` AND T1.discount = @discount`;
+        }
+        if (!validation.isEmptyObject(objSearch.favorite)) {
+            sqlStr += ` AND T1.favorite = @favorite`;
+        }
+        if (!validation.isEmptyObject(objSearch.price_M)) {
+            sqlStr += ` AND T1.price_M = @price_M`;
+        }
+        if (!validation.isEmptyObject(objSearch.price_L)) {
+            sqlStr += ` AND T1.price_L = @price_L`;
+        }
+
+        let strFilter = await baseModel.buildFilter(objSearch, fieldWhiteList, param);
+        sqlStr += ` ` + strFilter;
+        let orderStr = await baseModel.buildOrder(objSearch, fieldWhiteList, `created_date DESC`);
+        sqlStr += ` ` + orderStr;
+        sqlStr += ` LIMIT ` + currentPage + `,` + pageSize + `; SELECT FOUND_ROWS() AS total_row;`;
+
+        let conn = await baseModel.getConnection();
+        if (conn) {
+            let query = new Promise(function (resolve, reject) {
+                conn.query(sqlStr, param, async function(err, result, fields) {
+                    if(result) {
+                        resolve(result);
+                    } else {
+                        reject(err);
+                    }
+                });
+            });
+            
+            await query.then(async function(res) {
+                dataReturn = res[0];
+                totalRecord = res[1][0].total_row;
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "T_Product.js" },
+                    { key: "Function", content: "getProducts" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(objSearch) }
+                ]
+                await logService.sqlLog(logData);
+            }).catch(async function(err) {
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "T_Product.js" },
+                    { key: "Function", content: "getProducts" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(objSearch) },
+                    { key: "Err", content: err }
+                ]
+                await logService.errorLog(logData);
+            });
+        }
+        else {
+            return false;
+        }
+    } catch(err) {
         let logData = [
             { key: "Time", content: new Date() },
             { key: "File", content: "T_Product.js" },
-            { key: "Function", content: "searchProducts" },
-            { key: "Sql", content: sqlStr },
-            { key: "Param", content: para_array }
-        ]
-        await logService.sqlLog(logData);            
-    }).catch(async function(err) {
-        let logData = [
-            { key: "Time", content: new Date() },
-            { key: "File", content: "T_Product.js" },
-            { key: "Function", content: "searchProducts" },
-            { key: "Table", content: "product" },
-            { key: "Param", content: para_array },
+            { key: "Function", content: "getProducts" },
+            { key: "Table", content: T_Table.tableName },
+            { key: "Param", content: JSON.stringify(objSearch) },
             { key: "Err", content: err }
         ]
         await logService.errorLog(logData);
         
         return false;
-    });
-    return(dataReturn);
+    }
+    
+    return {
+        data: dataReturn,
+        totalRecord: totalRecord
+    };
 }
 
-module.exports = {    
-    getListProduct,
-    searchProducts
+module.exports = {
+    getProducts
 }

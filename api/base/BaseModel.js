@@ -1,21 +1,14 @@
 'use strict';
+
+const systemConfig = require('config');
+const sql = require('mysql');
+
 const logService = require('../services/LogService');
 const validation = require('../util/validation');
-const common = require('../util/common');
 const DB = require('../util/db_util');
-const connection = DB.connection;
-/*
-const T_Riyo = {
-    tableName: "T_Riyo",
-    columns: [
-        { key: "RiyoNo", type: sql.BigInt(8), isPk: true, defaultValue: null },
-        { key: "UserNo", type: sql.BigInt(8), isPk: false, defaultValue: null },
-        { key: "ActionContent", type: sql.NVarChar(200), isPk: false, defaultValue: null },
-        { key: "CreateDate", type: sql.DateTime, isPk: false, defaultValue: "getdate()" },
-        { key: "UpdateDate", type: sql.DateTime, isPk: false, defaultValue: "getdate()", defaultUpdate: "getdate()" }
-    ]
-};
-*/
+const cnn = DB.connection;
+const sqlCnn = DB.connection;
+
 const orderWhiteList = ["asc", "desc", null];
 const operatorWhiteList = ["AND", "OR"];
 const conditionWhiteList = [
@@ -32,38 +25,64 @@ const conditionWhiteList = [
     "inRange"
 ];
 
+async function getConnection() {
+    let sqlConfig = systemConfig.get("dbConfig");
+    sqlConfig.options = {
+        "encrypt": false
+    }
+    let conn = sql.createConnection(sqlConfig);    
+    try{
+        let sqlConnect = conn.connect();        
+    } catch (err) {
+        return false;
+    }
+
+    conn.config.queryFormat = function (query, values) {
+        if (!values) return query;
+        return query.replace(/\@(\w+)/g, function (txt, key) {
+            if (values.hasOwnProperty(key)) {
+                return this.escape(values[key]);
+            }
+            return txt;
+        }.bind(this));
+    };
+
+    return conn;
+}
+
 function fillData(T_Table, data) {
-    var sqlRequest = new sql.Request();
+    let param = {};
     for (var i = 0; i < T_Table.columns.length; i++) { 
         var item = T_Table.columns[i];
         if (typeof data[item.key] !== "undefined") {
-            sqlRequest.input(item.key, item.type, data[item.key]);
+            param[item.key] = data[item.key];
         }
     }
-    return sqlRequest;
+    return param;
 }
 
 // Insert data to table
 async function createNew(T_Table, data) {
-    let sqlRequest = this.fillData(T_Table, data);
+    let param = this.fillData(T_Table, data);
 
     let strField = "";
     let strParam = "";
     for (var i = 0; i < T_Table.columns.length; i++) { 
         var item = T_Table.columns[i];
         if (typeof data[item.key] !== "undefined" && !item.isPk) {
-            strField += "[" + item.key + "],"
-            strParam += "@" + item.key + ","
+            strField += item.key + ",";
+            strParam += "@" + item.key + ",";
         }
         else {
             if (item.defaultValue !== null && !item.isPk) {
-                strField += "[" + item.key + "],"
+                strField += item.key + ",";
                 if (item.defaultValue.toString().indexOf('()') >= 0) {
-                    strParam += item.defaultValue + ","
+                    strParam += item.defaultValue + ",";
                 }
                 else {
-                    strParam += "@" + item.key + ","
-                    sqlRequest.input(item.key, item.type, item.defaultValue);
+                    strParam += "@" + item.key + ",";
+
+                    param[item.key] = item.defaultValue;
                 }
             }
         }
@@ -76,41 +95,46 @@ async function createNew(T_Table, data) {
     let result;
     try {
         let sqlStr = `INSERT INTO ${T_Table.tableName} (${strField}) VALUES (${strParam})`;
-        let query = new Promise(function(resolve, reject) {
-            sqlRequest.query(sqlStr, function(err, res) {
-                if (res) {
-                    resolve(res);
-                } else {
-                    reject(err);
-                }
+        let conn = await this.getConnection();
+        if (conn) {
+            let query = new Promise(function (resolve, reject) {
+                conn.query(sqlStr, param, async function(err, result, fields) {
+                    if(result) {
+                        resolve(result);
+                    } else {
+                        reject(err);
+                    }
+                });
             });
-        });
-        let _this = this;
-        await query.then(async function(res) {
-            result = true;
-            _this.insertLog(T_Table, "登録", data);
 
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "createNew" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) }
-            ]
-            await logService.sqlLog(logData);
-        }).catch(async function(err) {
-            result = false;
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "createNew" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) },
-                { key: "Err", content: err }
-            ]
-            await logService.errorLog(logData);
-        });
-        return result;
+            await query.then(async function(res) {
+                result = true;
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "createNew" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) }
+                ]
+                await logService.sqlLog(logData);
+            }).catch(async function(err) {
+                result = false;
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "createNew" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) },
+                    { key: "Err", content: err }
+                ]
+                await logService.errorLog(logData);
+            });
+            return result;
+        }
+        else {
+            return false;
+        }
+        
     } catch(err) {
         let logData = [
             { key: "Time", content: new Date() },
@@ -128,25 +152,25 @@ async function createNew(T_Table, data) {
 
 // Insert data to table and return id inserted
 async function createNewGetId(T_Table, data) {
-    let sqlRequest = this.fillData(T_Table, data);
+    let param = this.fillData(T_Table, data);
 
     let strField = "";
     let strParam = "";
     for (var i = 0; i < T_Table.columns.length; i++) { 
         var item = T_Table.columns[i];
         if (typeof data[item.key] !== "undefined" && !item.isPk) {
-            strField += "[" + item.key + "],"
-            strParam += "@" + item.key + ","
+            strField += item.key + ",";
+            strParam += "@" + item.key + ",";
         }
         else {
             if (item.defaultValue !== null && !item.isPk) {
-                strField += "[" + item.key + "],"
+                strField += item.key + ",";
                 if (item.defaultValue.toString().indexOf('()') >= 0) {
-                    strParam += item.defaultValue + ","
+                    strParam += item.defaultValue + ",";
                 }
                 else {
-                    strParam += "@" + item.key + ","
-                    sqlRequest.input(item.key, item.type, item.defaultValue);
+                    strParam += "@" + item.key + ",";
+                    param[item.key] = item.defaultValue;
                 }
             }
         }
@@ -159,43 +183,46 @@ async function createNewGetId(T_Table, data) {
     let result;
     try {
         let sqlStr = `INSERT INTO ${T_Table.tableName} (${strField}) VALUES (${strParam}) SELECT SCOPE_IDENTITY() as id`;
-        let query = new Promise(function(resolve, reject) {
-            sqlRequest.query(sqlStr, function(err, res) {
-                if (res) {
-                    resolve(res);
-                } else {
-                    reject(err);
-                }
+        let conn = await this.getConnection();
+        if (conn) {
+            let query = new Promise(function (resolve, reject) {
+                conn.query(sqlStr, param, async function(err, result, fields) {
+                    if(result) {
+                        resolve(result);
+                    } else {
+                        reject(err);
+                    }
+                });
             });
-        });
-        let _this = this;
-        await query.then(async function(res) {
-            result = res.recordset.length > 0 ? res.recordset[0] : null;
-            // insert log
-            _this.insertLog(T_Table, "登録", data);
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "createNewGetId" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) }
-            ]
-            await logService.sqlLog(logData);
-        }).catch(async function(err) {
-            result = false;
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "createNewGetId" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) },
-                { key: "Err", content: err }
-            ]
-            await logService.errorLog(logData);
-        });
-        return result;
+            await query.then(async function(res) {
+                result = res.recordset.length > 0 ? res.recordset[0] : null;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "createNewGetId" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) }
+                ]
+                await logService.sqlLog(logData);
+            }).catch(async function(err) {
+                result = false;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "createNewGetId" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) },
+                    { key: "Err", content: err }
+                ]
+                await logService.errorLog(logData);
+            });
+            return result;
+        }
+        else {
+            return false;
+        }
     } catch(err) {
         let logData = [
             { key: "Time", content: new Date() },
@@ -224,11 +251,11 @@ async function updateById(T_Table, data) {
         }
 
         if (typeof data[item.key] !== "undefined" && !item.isPk) {
-            strFieldUpdate +=  `[${item.key}] = @${item.key},`;
+            strFieldUpdate +=  `${item.key} = @${item.key},`;
         }
         else {
             if (typeof item.defaultUpdate !== "undefined" && item.defaultUpdate !== 'none' && !item.isPk) {
-                strFieldUpdate += `[${item.key}] = ${item.defaultUpdate},`;
+                strFieldUpdate += `${item.key} = ${item.defaultUpdate},`;
             }
         }
     }
@@ -242,47 +269,50 @@ async function updateById(T_Table, data) {
         strFieldUpdate = strFieldUpdate.substr(0, strFieldUpdate.length - 1);
     }
 
-    let sqlRequest = this.fillData(T_Table, data);
+    let param = this.fillData(T_Table, data);
     let result;
     try {
-        let sqlStr = `UPDATE ${T_Table.tableName} SET ${strFieldUpdate} WHERE [${fieldPk}] = @${fieldPk}`;
-        let query = new Promise(function(resolve, reject) {
-            sqlRequest.query(sqlStr, function(err, res) {
-                if (res) {
-                    resolve(res);
-                } else {
-                    reject(err);
-                }
+        let sqlStr = `UPDATE ${T_Table.tableName} SET ${strFieldUpdate} WHERE ${fieldPk} = @${fieldPk}`;
+        let conn = await this.getConnection();
+        if (conn) {
+            let query = new Promise(function (resolve, reject) {
+                conn.query(sqlStr, param, async function(err, result, fields) {
+                    if(result) {
+                        resolve(result);
+                    } else {
+                        reject(err);
+                    }
+                });
             });
-        });
-        let _this = this;
-        await query.then(async function(res) {
-            result = true;
-            // insert log
-            _this.insertLog(T_Table, "更新", data);
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "updateById" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) }
-            ]
-            await logService.sqlLog(logData);
-        }).catch(async function(err) {
-            result = false;
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "updateById" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) },
-                { key: "Err", content: err }
-            ]
-            await logService.errorLog(logData);
-        });
-        return result;
+            await query.then(async function(res) {
+                result = true;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "updateById" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) }
+                ]
+                await logService.sqlLog(logData);
+            }).catch(async function(err) {
+                result = false;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "updateById" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) },
+                    { key: "Err", content: err }
+                ]
+                await logService.errorLog(logData);
+            });
+            return result;
+        }
+        else {
+            return false;
+        }
     } catch(err) {
         let logData = [
             { key: "Time", content: new Date() },
@@ -300,7 +330,7 @@ async function updateById(T_Table, data) {
 
 // Update data by other condition
 async function updateByCondition(T_Table, data, objCondition) {
-    let sqlRequest = this.fillData(T_Table, objCondition);
+    let param = this.fillData(T_Table, objCondition);
 
     let strFieldUpdate = "";
     let strWhere = "";
@@ -308,17 +338,17 @@ async function updateByCondition(T_Table, data, objCondition) {
         var item = T_Table.columns[i];
 
         if (typeof data[item.key] !== "undefined" && !item.isPk) {
-            strFieldUpdate +=  `[${item.key}] = @${item.key},`;
-            sqlRequest.input(item.key, item.type, data[item.key]);
+            strFieldUpdate +=  `${item.key} = @${item.key},`;
+            param[item.key] = data[item.key];
         }
         else {
             if (typeof item.defaultUpdate !== "undefined" && item.defaultUpdate !== 'none' && !item.isPk) {
-                strFieldUpdate += `[${item.key}] = ${item.defaultUpdate},`;
+                strFieldUpdate += `${item.key} = ${item.defaultUpdate},`;
             }
         }
 
         if (typeof objCondition[item.key] !== "undefined") {
-            strWhere += ` AND [${item.key}] = @${item.key}`;
+            strWhere += ` AND ${item.key} = @${item.key}`;
         }
     }
 
@@ -331,43 +361,46 @@ async function updateByCondition(T_Table, data, objCondition) {
     let result;
     try {
         let sqlStr = `UPDATE ${T_Table.tableName} SET ${strFieldUpdate} WHERE ${strWhere}`;
-        let query = new Promise(function(resolve, reject) {
-            sqlRequest.query(sqlStr, function(err, res) {
-                if (res) {
-                    resolve(res);
-                } else {
-                    reject(err);
-                }
+        let conn = await this.getConnection();
+        if (conn) {
+            let query = new Promise(function (resolve, reject) {
+                conn.query(sqlStr, param, async function(err, result, fields) {
+                    if(result) {
+                        resolve(result);
+                    } else {
+                        reject(err);
+                    }
+                });
             });
-        });
-        let _this = this;
-        await query.then(async function(res) {
-            result = true;
-            // insert log
-            _this.insertLog(T_Table, "更新", data);
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "updateByCondition" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) }
-            ]
-            await logService.sqlLog(logData);
-        }).catch(async function(err) {
-            result = false;
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "updateByCondition" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) },
-                { key: "Err", content: err }
-            ]
-            await logService.errorLog(logData);
-        });
-        return result;
+            await query.then(async function(res) {
+                result = true;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "updateByCondition" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) }
+                ]
+                await logService.sqlLog(logData);
+            }).catch(async function(err) {
+                result = false;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "updateByCondition" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) },
+                    { key: "Err", content: err }
+                ]
+                await logService.errorLog(logData);
+            });
+            return result;
+        }
+        else {
+            return false;
+        }
     } catch(err) {
         let logData = [
             { key: "Time", content: new Date() },
@@ -386,55 +419,61 @@ async function updateByCondition(T_Table, data, objCondition) {
 // Get detail by ID
 async function getDetailByID(T_Table, id) {
     let data;
-    let sqlRequest = new sql.Request();
+    let param = {};
     try {
         let strField = "";
         let fieldPk = "";
         for (var i = 0; i < T_Table.columns.length; i++) { 
             var item = T_Table.columns[i];
-            strField += "[" + item.key + "],"
+            strField += item.key + ","
             if (item.isPk) {
                 fieldPk = item.key;
-                sqlRequest.input(item.key, item.type, id);
+                param[item.key] = id;
             }
         }
         if (strField.length > 0) {
             strField = strField.substr(0, strField.length - 1);
         }
 
-        let sqlStr = `SELECT ${strField} FROM ${T_Table.tableName} WHERE [${fieldPk}] = @${fieldPk}`;
-        let query = new Promise(function(resolve, reject) {
-            sqlRequest.query(sqlStr, function(err, res) {
-                if (res) {
-                    resolve(res.recordset.length > 0 ? res.recordset[0] : null);
-                } else {
-                    reject(err);
-                }
+        let sqlStr = `SELECT ${strField} FROM ${T_Table.tableName} WHERE ${fieldPk} = @${fieldPk}`;
+        let conn = await this.getConnection();
+        if (conn) {
+            let query = new Promise(function (resolve, reject) {
+                conn.query(sqlStr, param, async function(err, result, fields) {
+                    if(result) {
+                        resolve(result);
+                    } else {
+                        reject(err);
+                    }
+                });
             });
-        });
-        await query.then(async function(res) {
-            data = res;
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "getDetailByID" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: id }
-            ]
-            await logService.sqlLog(logData);
-        }).catch(async function(err) {
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "getDetailByID" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: id },
-                { key: "Err", content: err }
-            ]
-            await logService.errorLog(logData);
-        })
-        return data;
+            await query.then(async function(res) {
+                data = res;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "getDetailByID" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: id }
+                ]
+                await logService.sqlLog(logData);
+            }).catch(async function(err) {
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "getDetailByID" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: id },
+                    { key: "Err", content: err }
+                ]
+                await logService.errorLog(logData);
+            })
+            return data;
+        }
+        else {
+            return false;
+        }
     } catch(err) {
         let logData = [
             { key: "Time", content: new Date() },
@@ -452,14 +491,14 @@ async function getDetailByID(T_Table, id) {
 
 // Search data
 async function searchData(T_Table, objSearch, orders) {
-    let sqlRequest = this.fillData(T_Table, objSearch);
+    let param = this.fillData(T_Table, objSearch);
     let data;
     try {
         let strField = "";
         let strWhere = "";
         for (var i = 0; i < T_Table.columns.length; i++) { 
             var item = T_Table.columns[i];
-            strField += "[" + item.key + "],"
+            strField += item.key + ","
 
             if (!validation.isEmptyObject(objSearch[item.key])) {
                 if (typeof objSearch.operatorCondition !== "undefined" && objSearch.operatorCondition.length > 0) {
@@ -472,14 +511,14 @@ async function searchData(T_Table, objSearch, orders) {
                         }
                     }
                     if (strCondition !== "") {
-                        strWhere += ` AND [${item.key}] ${strCondition} @${item.key}`;
+                        strWhere += ` AND ${item.key} ${strCondition} @${item.key}`;
                     }
                     else {
-                        strWhere += ` AND [${item.key}] = @${item.key}`;
+                        strWhere += ` AND ${item.key} = @${item.key}`;
                     }
                 }
                 else {
-                    strWhere += ` AND [${item.key}] = @${item.key}`;
+                    strWhere += ` AND ${item.key} = @${item.key}`;
                 }
             }
         }
@@ -491,7 +530,7 @@ async function searchData(T_Table, objSearch, orders) {
             strOrder += " ORDER BY ";
             for (var i = 0; i < orders.length; i++) {
                 var order = orders[i];
-                strOrder += "[" + order.key + "] " + order.type + ",";
+                strOrder += order.key + order.type + ",";
             }
         }
         if (strOrder.length > 0) {
@@ -499,29 +538,43 @@ async function searchData(T_Table, objSearch, orders) {
         }
 
         let sqlStr = `SELECT ${strField} FROM ${T_Table.tableName} WHERE 1 = 1${strWhere}${strOrder}`;
-        let query = sqlRequest.query(sqlStr);
-        await query.then(async function(res) {
-            data = res.recordset; 
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "searchData" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(objSearch) }
-            ]
-            await logService.sqlLog(logData);
-        }).catch(async function(err) {
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "searchData" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(objSearch) },
-                { key: "Err", content: err }
-            ]
-            await logService.errorLog(logData);
-        });
+        let conn = await this.getConnection();
+        if (conn) {
+            let query = new Promise(function (resolve, reject) {
+                conn.query(sqlStr, param, async function(err, result, fields) {
+                    if(result) {
+                        resolve(result);
+                    } else {
+                        reject(err);
+                    }
+                });
+            });
+            await query.then(async function(res) {
+                data = res.recordset;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "searchData" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(objSearch) }
+                ]
+                await logService.sqlLog(logData);
+            }).catch(async function(err) {
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "searchData" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(objSearch) },
+                    { key: "Err", content: err }
+                ]
+                await logService.errorLog(logData);
+            });
+        }
+        else {
+            return false;
+        }
     } catch(err) {
         let logData = [
             { key: "Time", content: new Date() },
@@ -546,7 +599,7 @@ async function deleteData(T_Table, data) {
         var item = T_Table.columns[i];
 
         if (typeof data[item.key] !== "undefined") {
-            strWhere += ` AND [${item.key}] = @${item.key}`;
+            strWhere += ` AND ${item.key} = @${item.key}`;
         }
     }
 
@@ -554,47 +607,50 @@ async function deleteData(T_Table, data) {
         strWhere = strWhere.substr(5, strWhere.length);
     }
 
-    let sqlRequest = this.fillData(T_Table, data);
+    let param = this.fillData(T_Table, data);
     let result;
     try {
         let sqlStr = `DELETE FROM ${T_Table.tableName} WHERE ${strWhere}`;
-        let query = new Promise(function(resolve, reject) {
-            sqlRequest.query(sqlStr, function(err, res) {
-                if (res) {
-                    resolve(res);
-                } else {
-                    reject(err);
-                }
+        let conn = await this.getConnection();
+        if (conn) {
+            let query = new Promise(function (resolve, reject) {
+                conn.query(sqlStr, param, async function(err, result, fields) {
+                    if(result) {
+                        resolve(result);
+                    } else {
+                        reject(err);
+                    }
+                });
             });
-        });
-        let _this = this;
-        await query.then(async function(res) {
-            result = true;
-            // insert log
-            _this.insertLog(T_Table, "削除", data);
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "deleteData" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) }
-            ]
-            await logService.sqlLog(logData);
-        }).catch(async function(err) {
-            result = false;
-
-            let logData = [
-                { key: "Time", content: new Date() },
-                { key: "File", content: "BaseModel.js" },
-                { key: "Function", content: "deleteData" },
-                { key: "Sql", content: sqlStr },
-                { key: "Param", content: JSON.stringify(data) },
-                { key: "Err", content: err }
-            ]
-            await logService.errorLog(logData);
-        });
-        return result;
+            await query.then(async function(res) {
+                result = true;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "deleteData" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) }
+                ]
+                await logService.sqlLog(logData);
+            }).catch(async function(err) {
+                result = false;
+    
+                let logData = [
+                    { key: "Time", content: new Date() },
+                    { key: "File", content: "BaseModel.js" },
+                    { key: "Function", content: "deleteData" },
+                    { key: "Sql", content: sqlStr },
+                    { key: "Param", content: JSON.stringify(data) },
+                    { key: "Err", content: err }
+                ]
+                await logService.errorLog(logData);
+            });
+            return result;
+        }
+        else {
+            return false;
+        }
     } catch(err) {
         let logData = [
             { key: "Time", content: new Date() },
@@ -610,104 +666,8 @@ async function deleteData(T_Table, data) {
     }
 }
 
-// Insert data to table
-async function insertLog(T_Table, action, data) {
-    // Insert log
-    let ActionContent = "";
-    switch(T_Table.tableName) {
-        case 'T_Agent':
-            ActionContent = "保険代理店" + action;
-            break;
-        case 'T_Family':
-            ActionContent = "家族情報" + action;
-            break;
-        case 'T_File':
-            ActionContent = "保険証券画像" + action;
-            break;
-        case 'T_Group':
-            ActionContent = "保険証券画像" + action;
-            break;
-        case 'T_Keiyaku':
-            ActionContent = "保険証券" + action;
-            break;
-        /*
-        case 'T_KeiyakuHosho':
-        ActionContent = "keiyaku hosho info";
-        break;
-        case 'T_KeiyakuTokuyaku':
-        ActionContent = "keiyaku tokuyaku info";
-        break;
-        */
-        case 'T_Message':
-            if (data.MessageType === 1) {
-                ActionContent = "簡易診断依頼";
-            }
-            else if (data.MessageType === 2) {
-                ActionContent = "お試し分析依頼";
-            }
-            else {
-                ActionContent = "お問合せ依頼";
-            }
-            break;
-    }
-
-    if (ActionContent === "" || typeof data.notLog !== "undefined") {
-        return true;
-    }
-    let logInfo = {
-        UserNo: data.tokenData.user_no,
-        ActionContent: ActionContent
-    }
-
-    let sqlRequest = this.fillData(T_Riyo, logInfo);
-
-    let strField = "";
-    let strParam = "";
-    for (var i = 0; i < T_Riyo.columns.length; i++) { 
-        var item = T_Riyo.columns[i];
-        if (typeof logInfo[item.key] !== "undefined" && !item.isPk) {
-            strField += item.key + ","
-            strParam += "@" + item.key + ","
-        }
-        else {
-            if (item.defaultValue !== null && !item.isPk) {
-                strField += item.key + ","
-                strParam += item.defaultValue + ","
-            }
-        }
-    }
-    if (strField.length > 0) {
-        strField = strField.substr(0, strField.length - 1);
-        strParam = strParam.substr(0, strParam.length - 1);
-    }
-    
-    let result;
-    try {
-        let sqlStr = `INSERT INTO ${T_Riyo.tableName} (${strField}) VALUES (${strParam})`;
-        let query = new Promise(function(resolve, reject) {
-            sqlRequest.query(sqlStr, function(err, res) {
-                if(res) {
-                    resolve(res);
-                }else {
-                    reject(err);
-                }
-            });
-        });
-        await query.then(res => {
-            result = true;
-        }).catch(err => {
-            console.log(err);
-            result = false;
-        });
-        return result;
-    } catch(err) {
-        console.log(err);
-        return false;
-    }
-}
-
 // Build filter condition
-async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
+async function buildFilter(objSearch, fieldWhiteList, sqlParam) {
     let sqlStr = ``;
     if (objSearch.Filter.length > 0) {
         for (let i = 0; i < objSearch.Filter.length; i++) {
@@ -721,7 +681,6 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                 if (fieldFilterIndex >= 0 && operatorIndex >= 0) {
                     if (!validation.isEmptyObject(item.value2)) {
                         if (condition1Index >= 0 && condition2Index >= 0) {
-                            let sqlType = sql.NVarChar;
                             let paramValue1 = item.value1;
                             let paramValue1Range1;
                             let paramValue1Range2;
@@ -757,7 +716,6 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                                 }
                                 
                                 if (item.type === "number") {
-                                    sqlType = sql.Float;
                                     paramValue1 = parseFloat(item.value1);
                                 }
                                 else {
@@ -767,7 +725,6 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                             else {
                                 sqlStr += ` AND (`;
                                 if (item.type === "number") {
-                                    sqlType = sql.Float;
                                     if (!validation.isEmptyObject(item.value1[0])) {
                                         paramValue1Range1 = parseFloat(item.value1[0]);
                                     }
@@ -823,49 +780,49 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                             
                             switch (conditionWhiteList[condition1Index]) {
                                 case "equals":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` = @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "notEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` != @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "startsWith":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sql.NVarChar, paramValue1 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1 + `%`;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value1)`;
                                     break;
                                 case "endsWith":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sql.NVarChar, `%` + paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = `%` + paramValue1;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value1)`;
                                     break;
                                 case "contains":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sql.NVarChar, `%` + paramValue1 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = `%` + paramValue1 + `%`;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value1)`;
                                     break;
                                 case "notContains":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sql.NVarChar, `%` + paramValue1 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = `%` + paramValue1 + `%`;
                                     sqlStr += ` NOT LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value1)`;
                                     break;
                                 case "lessThan":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` < @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "lessThanOrEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` <= @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "greaterThan":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` > @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "greaterThanOrEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` >= @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "inRange":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1Range1", sqlType, paramValue1Range1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1Range1"] = paramValue1Range1;
                                     if (!validation.isEmptyObject(item.value1[1])) {
-                                        sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1Range2", sqlType, paramValue1Range2);
+                                        sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1Range2"] = paramValue1Range2;
                                         if (item.type === "date" || item.type === "time") {
                                             sqlStr += `(cast(convert(char(11), ` + fieldWhiteList[fieldFilterIndex] + `, 113) as datetime) >= @` + fieldWhiteList[fieldFilterIndex] + `Value1Range1 AND cast(convert(char(11), ` + fieldWhiteList[fieldFilterIndex] + `, 113) as datetime) <= @` + fieldWhiteList[fieldFilterIndex] + `Value1Range2)`;
                                         }
@@ -914,49 +871,49 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                             
                             switch (conditionWhiteList[condition2Index]) {
                                 case "equals":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sqlType, paramValue2);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = paramValue2;
                                     sqlStr += ` = @` + fieldWhiteList[fieldFilterIndex] + `Value2`;
                                     break;
                                 case "notEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sqlType, paramValue2);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = paramValue2;
                                     sqlStr += ` != @` + fieldWhiteList[fieldFilterIndex] + `Value2`;
                                     break;
                                 case "startsWith":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sql.NVarChar, paramValue2 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = paramValue2 + `%`;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value2)`;
                                     break;
                                 case "endsWith":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sql.NVarChar, `%` + paramValue2);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = `%` + paramValue2;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value2)`;
                                     break;
                                 case "contains":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sql.NVarChar, `%` + paramValue2 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = `%` + paramValue2 + `%`;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value2)`;
                                     break;
                                 case "notContains":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sql.NVarChar, `%` + paramValue2 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = `%` + paramValue2 + `%`;
                                     sqlStr += ` NOT LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value2)`;
                                     break;
                                 case "lessThan":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sqlType, paramValue2);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = paramValue2;
                                     sqlStr += ` < @` + fieldWhiteList[fieldFilterIndex] + `Value2`;
                                     break;
                                 case "lessThanOrEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sqlType, paramValue2);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = paramValue2;
                                     sqlStr += ` <= @` + fieldWhiteList[fieldFilterIndex] + `Value2`;
                                     break;
                                 case "greaterThan":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sqlType, paramValue2);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = paramValue2;
                                     sqlStr += ` > @` + fieldWhiteList[fieldFilterIndex] + `Value2`;
                                     break;
                                 case "greaterThanOrEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2", sqlType, paramValue2);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2"] = paramValue2;
                                     sqlStr += ` >= @` + fieldWhiteList[fieldFilterIndex] + `Value2`;
                                     break;
                                 case "inRange":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2Range1", sqlType, paramValue2Range1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2Range1"] = paramValue2Range1;
                                     if (!validation.isEmptyObject(item.value2[1])) {
-                                        sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value2Range2", sqlType, paramValue2Range2);
+                                        sqlParam[fieldWhiteList[fieldFilterIndex] + "Value2Range2"] = paramValue2Range2;
                                         if (item.type === "date" || item.type === "time") {
                                             sqlStr += `(cast(convert(char(11), ` + fieldWhiteList[fieldFilterIndex] + `, 113) as datetime) >= @` + fieldWhiteList[fieldFilterIndex] + "Value2Range1" + ` AND cast(convert(char(11), ` + fieldWhiteList[fieldFilterIndex] + `, 113) as datetime) <= @` + fieldWhiteList[fieldFilterIndex] + `Value2Range2)`;
                                         }
@@ -980,7 +937,6 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                     }
                     else {
                         if (condition1Index >= 0) {
-                            let sqlType = sql.NVarChar;
                             let paramValue1 = item.value1;
                             let paramValue1Range1;
                             let paramValue1Range2;
@@ -1013,7 +969,6 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                                 }
                                 
                                 if (item.type === "number") {
-                                    sqlType = sql.Float;
                                     paramValue1 = parseFloat(item.value1);
                                 }
                                 else {
@@ -1023,7 +978,6 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                             else {
                                 sqlStr += ` AND `;
                                 if (item.type === "number") {
-                                    sqlType = sql.Float;
                                     if (!validation.isEmptyObject(item.value1[0])) {
                                         paramValue1Range1 = parseFloat(item.value1[0]);
                                     }
@@ -1049,49 +1003,49 @@ async function buildFilter(objSearch, fieldWhiteList, sqlRequest) {
                             
                             switch (conditionWhiteList[condition1Index]) {
                                 case "equals":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` = @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "notEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` != @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "startsWith":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sql.NVarChar, paramValue1 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1 + `%`;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value1)`;
                                     break;
                                 case "endsWith":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sql.NVarChar, `%` + paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = `%` + paramValue1;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value1)`;
                                     break;
                                 case "contains":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sql.NVarChar, `%` + paramValue1 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = `%` + paramValue1 + `%`;
                                     sqlStr += ` LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value1)`;
                                     break;
                                 case "notContains":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sql.NVarChar, `%` + paramValue1 + `%`);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = `%` + paramValue1 + `%`;
                                     sqlStr += ` NOT LIKE UPPER(@` + fieldWhiteList[fieldFilterIndex] + `Value1)`;
                                     break;
                                 case "lessThan":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` < @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "lessThanOrEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` <= @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "greaterThan":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` > @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "greaterThanOrEqual":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1", sqlType, paramValue1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1"] = paramValue1;
                                     sqlStr += ` >= @` + fieldWhiteList[fieldFilterIndex] + `Value1`;
                                     break;
                                 case "inRange":
-                                    sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1Range1", sqlType, paramValue1Range1);
+                                    sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1Range1"] = paramValue1Range1;
                                     if (!validation.isEmptyObject(item.value1[1])) {
-                                        sqlRequest.input(fieldWhiteList[fieldFilterIndex] + "Value1Range2", sqlType, paramValue1Range2);
+                                        sqlParam[fieldWhiteList[fieldFilterIndex] + "Value1Range2"] = paramValue1Range2;
                                         sqlStr += `(cast(convert(char(11), ` + fieldWhiteList[fieldFilterIndex] + `, 113) as datetime) >= @` + fieldWhiteList[fieldFilterIndex] + `Value1Range1 AND cast(convert(char(11), ` + fieldWhiteList[fieldFilterIndex] + `, 113) as datetime) <= @` + fieldWhiteList[fieldFilterIndex] + `Value1Range2)`;
                                     }
                                     else {
@@ -1148,7 +1102,9 @@ async function buildOrder(objSearch, fieldWhiteList, defaultOrder) {
 
 module.exports = {
     DB,
-    connection,
+    sql,
+    cnn,
+    sqlCnn,
     fillData,
     createNew,
     createNewGetId,
@@ -1157,7 +1113,7 @@ module.exports = {
     getDetailByID,
     searchData,
     deleteData,
-    insertLog,
     buildFilter,
-    buildOrder
+    buildOrder,
+    getConnection
 };

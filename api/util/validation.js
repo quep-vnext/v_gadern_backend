@@ -27,80 +27,11 @@ function isEmptyObject(...listObject) {
     });
     return check;
 }
-function check_T_Family(family) {
-    let notNullFields = [
-        'UserNo',
-        'Sex'
-    ]
-    //check null fields
-    let hasNull = false;
-    let requiredFields = '';
-    notNullFields.forEach( key => {
-        hasNull = hasNull && isEmptyObject(family.key);
-        if(hasNull) {
-            requiredFields += `, ${key}`;
-        }
-    })
-    if(hasNull) {
-        return false;
-    }else {
-        return true;
-    }
-    
-}
-function checkUpdateFamily(family) {
-    let requiredFields = [
-        'FamilyNo',
-        'UserNo',
-        'Relation',
-        'Sex'
-    ]
-    let checkRequired =  checkRequiredFields(family, requiredFields);
-    if(!checkRequired.required) {
-        //check Birthday ....
-        if(family["Birthday"] === null || family["Birthday"].getTime()) {
-            return checkRequired;
-        }else {
-            return {
-                required: true,
-                requiredFields: 'Birthday is invalid!'
-            }
-        }
-    }
-    return checkRequired;
-    
-}
-function checkCreateFamily(family) {
-    let requiredFields = [
-        'UserNo',
-        'Relation',
-        'Sex'
-    ]
-    let checkRequired =  checkRequiredFields(family, requiredFields);
-    if(!checkRequired.required) {
-        //check Birthday ....
-        if(family["Birthday"] === null || family["Birthday"].getTime()) {
-            return checkRequired;
-        }else {
-            return {
-                required: true,
-                requiredFields: 'Birthday is invalid!'
-            }
-        }
-    }
-    return checkRequired;
-}
-/**
- * 
- * @param {Object} checkObject object that want to check ...
- * @param {Array} requiredKeys  list of required keys
- */
 function checkRequiredFields(checkObject, requiredKeys) {
     let hasNull = false;
     let requiredTextList = '';
     requiredKeys.forEach( key => {
         if(isEmptyObject(checkObject[key])) {
-            // console.log(checkObject[key]);
             hasNull = true;
             requiredTextList += `${key}, `  ;
         }
@@ -113,9 +44,6 @@ function checkRequiredFields(checkObject, requiredKeys) {
 module.exports = {
     validateEmail,
     isEmptyObject,
-    check_T_Family,
-    checkUpdateFamily,
-    checkCreateFamily,
     RESPONSE_CODE,
     checkRequiredFields
 }
