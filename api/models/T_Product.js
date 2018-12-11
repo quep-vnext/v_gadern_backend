@@ -13,8 +13,8 @@ const T_Table = {
         { key: "name", type: sql.VarChar, isPk: false, defaultValue: null },
         { key: "category_id", type: sql.Int, isPk: false, defaultValue: null },
         { key: "discount", type: sql.Int, isPk: false, defaultValue: null },
-        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()", defaultUpdate: "getdate()" },
-        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()" },
+        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "NOW()", defaultUpdate: "NOW()" },
+        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "NOW()" },
         { key: "favorite", type: sql.TinyInt, isPk: false, defaultValue: null },
         { key: "price_M", type: sql.Int, isPk: false, defaultValue: null },
         { key: "price_L", type: sql.Int, isPk: false, defaultValue: null }
@@ -135,6 +135,26 @@ async function getProducts(objSearch) {
     };
 }
 
+async function getProductsByCategory(objSearch) {
+    return baseModel.searchData(T_Table, objSearch, [{ key: "created_date", type: "ASC" }]);
+}
+
+async function getProductDetail(objSearch) {
+    return baseModel.getDetailByID(T_Table, objSearch.id);
+}
+
+async function createProduct(objData) {
+    return baseModel.createNewGetId(T_Table, objData);
+}
+
+async function updateProduct(data) {
+    return baseModel.updateById(T_Table, data);
+}
+
 module.exports = {
-    getProducts
+    getProducts,
+    getProductsByCategory,
+    getProductDetail,
+    createProduct,
+    updateProduct
 }

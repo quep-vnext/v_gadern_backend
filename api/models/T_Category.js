@@ -10,8 +10,8 @@ const T_Table = {
         { key: "id", type: sql.Int, isPk: true, defaultValue: null },
         { key: "parent_id", type: sql.Int, isPk: false, defaultValue: null },
         { key: "name", type: sql.VarChar, isPk: false, defaultValue: null },
-        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()", defaultUpdate: "getdate()" },
-        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()" }
+        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "NOW()", defaultUpdate: "NOW()" },
+        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "NOW()" }
     ]
 };
 const fieldWhiteList = [

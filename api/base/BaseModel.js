@@ -182,7 +182,7 @@ async function createNewGetId(T_Table, data) {
 
     let result;
     try {
-        let sqlStr = `INSERT INTO ${T_Table.tableName} (${strField}) VALUES (${strParam}) SELECT SCOPE_IDENTITY() as id`;
+        let sqlStr = `INSERT INTO ${T_Table.tableName} (${strField}) VALUES (${strParam}); SELECT LAST_INSERT_ID() as id`;
         let conn = await this.getConnection();
         if (conn) {
             let query = new Promise(function (resolve, reject) {
@@ -195,7 +195,7 @@ async function createNewGetId(T_Table, data) {
                 });
             });
             await query.then(async function(res) {
-                result = res.recordset.length > 0 ? res.recordset[0] : null;
+                result = res[1][0].id;
     
                 let logData = [
                     { key: "Time", content: new Date() },
@@ -448,7 +448,12 @@ async function getDetailByID(T_Table, id) {
                 });
             });
             await query.then(async function(res) {
-                data = res;
+                if (res.length > 0) {
+                    data = res[0];
+                }
+                else {
+                    data = null;
+                }
     
                 let logData = [
                     { key: "Time", content: new Date() },
@@ -530,7 +535,7 @@ async function searchData(T_Table, objSearch, orders) {
             strOrder += " ORDER BY ";
             for (var i = 0; i < orders.length; i++) {
                 var order = orders[i];
-                strOrder += order.key + order.type + ",";
+                strOrder += order.key + ` ` + order.type + ",";
             }
         }
         if (strOrder.length > 0) {
@@ -550,7 +555,7 @@ async function searchData(T_Table, objSearch, orders) {
                 });
             });
             await query.then(async function(res) {
-                data = res.recordset;
+                data = res;
     
                 let logData = [
                     { key: "Time", content: new Date() },

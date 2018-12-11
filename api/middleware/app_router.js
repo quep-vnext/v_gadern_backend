@@ -20,7 +20,11 @@ const userController = require('../controllers/UserController');
 //defined by below NotAuthen array
 const NotAuthen = [
     '/api/login',
-    '/api/getProducts'
+    '/api/getProducts',
+    '/api/getProductsByCategory',
+    '/api/getProductDetail',
+    '/api/createProduct',
+    '/api/updateProduct'
 ];
 
 var router = express.Router();
@@ -106,6 +110,34 @@ router.use(function (req, res, next) {
 */
 router.post('/getProducts', function(req, res){
     return productController.getProducts(req, res);
+});
+
+/**
+* get products by category
+*/
+router.post('/getProductsByCategory', function(req, res){
+    return productController.getProductsByCategory(req, res);
+});
+
+/**
+* get product detail
+*/
+router.post('/getProductDetail', function(req, res){
+    return productController.getProductDetail(req, res);
+});
+
+/**
+* create product
+*/
+router.post('/createProduct', function(req, res){
+    return productController.createProduct(req, res);
+});
+
+/**
+* update product
+*/
+router.post('/updateProduct', function(req, res){
+    return productController.updateProduct(req, res);
 });
 
 //#endregion

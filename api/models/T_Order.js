@@ -11,8 +11,8 @@ const T_Table = {
         { key: "user_id", type: sql.Int, isPk: false, defaultValue: null },
         { key: "product_id", type: sql.Int, isPk: false, defaultValue: null },
         { key: "status", type: sql.VarChar, isPk: false, defaultValue: null },
-        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()", defaultUpdate: "getdate()" },
-        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()" }
+        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "NOW()", defaultUpdate: "NOW()" },
+        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "NOW()" }
     ]
 };
 const fieldWhiteList = [

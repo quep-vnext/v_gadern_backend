@@ -15,8 +15,8 @@ const T_Table = {
         { key: "password", type: sql.VarBinary, isPk: false, defaultValue: null },
         { key: "token", type: sql.VarChar, isPk: false, defaultValue: null },
         { key: "last_login_activity", type: sql.VarChar, isPk: false, defaultValue: null },
-        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()", defaultUpdate: "getdate()" },
-        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "getdate()" }
+        { key: "updated_date", type: sql.DateTime, isPk: false, defaultValue: "NOW()", defaultUpdate: "NOW()" },
+        { key: "created_date", type: sql.DateTime, isPk: false, defaultValue: "NOW()" }
     ]
 };
 const fieldWhiteList = [
